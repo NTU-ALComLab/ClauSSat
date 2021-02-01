@@ -1,0 +1,9 @@
+Binaries
+	qesto
+		original version: [-ge]
+		cued version: [-geuw]
+		cued+UAS vesion: [-geuwn]
+		certificate: +[-k]
+		->qesto certificate: [-genk]
+		->our certificate: [-geuwnk]
+		onset/careset: +[-km] //must with certificate option

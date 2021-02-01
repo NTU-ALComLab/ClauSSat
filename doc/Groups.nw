@@ -1,0 +1,558 @@
+% File:  Groups.nw
+% Author: mikolas
+% Created on: Tue, Dec 09, 2014 2:45:37 PM
+% Copyright (C) 2014, Mikolas Janota
+<<Groups.hh>>=
+#ifndef GROUPS_NW_25825
+#define GROUPS_NW_25825
+<<h includes>>
+struct Pin {
+	Pin( Lit l, size_t pid, size_t lv ): lit(l), id(pid), qlev(lv), mark(false) {};
+	Pin() { assert(0); }
+	Lit lit;
+	size_t id;
+	size_t qlev;
+	mutable bool mark;
+	std::map<size_t,Pin*> connectedPins;
+	inline string getName() const { std::ostringstream o; o << 'p' << id; return o.str(); }
+};
+
+class Groups{public:<<public members>>
+             private:<<private members>>};
+<<inline implementation>>
+#endif
+
+<<public members>>=
+Groups(const Options& opt, const LevelInfo& levs,const QFla& fla)
+<<fields init>>
+{
+  for(size_t index = 0; index<fla.cnf.size(); ++index)
+    add_clause(index);
+  gen_groups();
+  if( opt.get_pin() ) gen_pins();
+  
+  if( !opt.get_pin() ) cout << "c nGroup = " << group_count << endl;
+  else {
+    size_t nEdge = 0;
+    for( Pin* pP : pins ) nEdge += pP->connectedPins.size();
+    cout << "c nGroup/nPin/nEdge = "<< group_count << "/" << pins.size() << "/" << nEdge << endl;
+  }
+  //std::cerr<<"c groups init "<<read_cpu_time()<<std::endl;
+}
+
+
+<<public members>>=
+inline size_t parent(size_t gid) const;
+inline bool is_end(size_t gid) const;
+inline const vector<size_t>& groups(size_t qlev) const;
+inline const LitSet& lits(size_t gid) const;
+inline size_t qlev(size_t gid) const;
+inline const vector<size_t>& get_children(size_t group);
+inline void print() const;
+inline const vector<Pin*>& getPins();
+inline Pin* pin( size_t pid );
+inline const vector<Pin*>& getPins( size_t gid ) const;
+
+<<Groups.cc>>=
+#include "Groups.hh"
+#include "mtl/Sort.h"
+using SATSPC::lit_Error;
+using SATSPC::lit_Undef;
+<<implementation>>
+
+<<public members>>=
+struct Node;
+
+<<public members>>=
+struct Edge {
+  Edge():l(SATSPC::lit_Error),n(NULL),ql(-1) { }
+  Edge(Lit l, Node* n, size_t ql):l(l),n(n),ql(ql) { }
+  Edge(const Edge& o) : l(o.l),n(o.n),ql(o.ql) { }
+  Lit l; Node* n;
+  size_t ql;
+};
+
+<<public members>>=
+struct Node {
+  Node():is_end(false),gid(-1) { }
+  bool is_end;
+  size_t gid;
+  std::vector<Edge> es;
+};
+
+<<public members>>=
+inline const LevelInfo& get_levs() const {return levs;}
+inline const Node* get_groups() const {return &root;}
+inline size_t get_group_count() const {return group_count;}
+inline bool is_group(const Node& n) const {return (n.gid)<group_count;}
+inline ~Groups() { for( Pin* pP : pins ) { assert( pP != NULL ); delete pP;  } }
+inline void setWaitingForBlifWritting( size_t gid, bool skol ) { gr2blifWrittingWaiting[skol][ gid ] = true; }
+inline bool isWaitingForBlifWritting( size_t gid, bool skol ) { return gr2blifWrittingWaiting[skol][ gid ]; }
+inline string getName( size_t gid ) const { std::ostringstream ss; ss << "g" << gid; return ss.str(); }
+
+<<private members>>=
+const Options& opt;
+const LevelInfo& levs;
+const QFla& fla;
+Node root;
+size_t group_count;
+vector<LitSet> gr2lits;
+vector<bool> gr2end;
+vector<size_t> gr2parent;
+vector<size_t> gr2qlev;
+vector<vector<size_t> >  grouped_levels;
+vector<vector<Pin*> > gr2pins;
+vector<Pin*> pins; //distributor
+vector<vector<bool> > gr2blifWrittingWaiting;
+
+<<fields init>>=
+:opt(opt)
+,levs(levs)
+,fla(fla)
+,group_count(0)
+,grouped_levels(levs.lev_count())
+
+<<implementation>>=
+bool Groups::add_clause(size_t clause_index) {
+  Node *node = &root;
+  vec<Lit> cls;
+  FOR_EACH(li,fla.cnf[clause_index]) cls.push(*li);
+  LevCmp lc(&levs);
+  SATSPC::sort(cls,lc);
+  bool is_new=false;
+  size_t next_lev=0;
+  int i=0;
+  const auto clsz=cls.size();
+  Node *last_real_node=NULL;
+  size_t last_real_lev=-1;
+  while(next_lev<=levs.lev_count()){
+    if(node->is_end){//subsumtion
+      assert(!is_new);
+      return false;
+    }
+    Lit l=lit_Error;
+    if((i>=clsz)||(next_lev<levs.qlev(cls[i]))) {
+      ++next_lev;//insert fake lit for next lev
+      if(next_lev==(levs.lev_count()+1)) break;
+      l=lit_Undef;
+    }else{
+      l=cls[i++];
+      next_lev=levs.qlev(l)+1;
+    }
+    auto& es=node->es;
+    const auto sz=es.size();
+    size_t j=0;
+    while(j<sz&&es[j].l!=l) ++j;//TODO:could be faster by binary
+    if(j==sz) {
+      is_new=true;
+      assert(next_lev>0);
+      es.push_back(Edge(l,new Node(),next_lev-1));
+    }
+    assert(es[j].l==l);
+    assert(es[j].ql==(next_lev-1));
+    node=es[j].n;
+    if(l!=lit_Undef){
+      last_real_node=node;
+      assert(next_lev>0);
+      last_real_lev=next_lev-1;
+    }
+  }
+  if(last_real_node!=NULL) {
+    last_real_node->is_end=true;
+    empty_subtree(last_real_node,last_real_lev);//remove subsumed
+  }
+  return is_new;
+}
+
+<<implementation>>=
+void Groups::gen_groups(){
+  if(fla.cnf.empty())return;
+  vector<Lit> accum;
+  gen_groups(root,0,-1,accum);
+}
+
+<<implementation>>=
+void Groups::gen_groups( Node& n, size_t ql, size_t parent_group, vector<Lit>& accum ) {
+  assert(ql<levs.lev_count());
+  bool new_group=n.es.empty();
+  FOR_EACH(i,n.es) {
+    assert(i->ql==(ql+1)||i->ql==ql);
+    if(i->ql!=ql){
+      new_group=true;
+      break;
+    }
+  }
+  n.gid=new_group ? add_group(n.is_end,LitSet(accum),ql,parent_group) : -1;
+  vector<Lit> new_accum;
+  FOR_EACH(i,n.es) {
+    if(i->ql!=ql){
+      assert(i->ql==ql+1);
+      assert(new_group);
+      new_accum.clear();
+      if(i->l!=lit_Undef)new_accum.push_back(i->l);
+      gen_groups(*(i->n),ql+1,n.gid,new_accum);
+    } else {
+      assert(i->ql==ql);
+      if(i->l!=lit_Undef)accum.push_back(i->l);
+      gen_groups(*(i->n),ql,parent_group,accum);
+      if(i->l!=lit_Undef)accum.pop_back();
+     }
+  }
+}
+
+<<implementation>>=
+size_t Groups::add_group(bool is_end, LitSet ls, size_t ql, size_t parent_group){
+  const size_t gid=group_count++;
+  gr2end.resize(gid+1);
+  gr2lits.resize(gid+1);
+  gr2parent.resize(gid+1);
+  gr2qlev.resize(gid+1);
+  gr2end[gid]=is_end;
+  gr2lits[gid]=ls;
+  gr2parent[gid]=ql?parent_group:gid;
+  gr2qlev[gid]=ql;
+  grouped_levels[ql].push_back(gid);
+  gr2pins.resize( gid+1 );
+  gr2blifWrittingWaiting.resize(2);
+  gr2blifWrittingWaiting[0].resize( gid+1, false );
+  gr2blifWrittingWaiting[1].resize( gid+1, false );
+  if( opt.get_verbose()>5){
+    std::cerr<<"-----"<<std::endl;
+    std::cerr<<"gr: "<<gid<<std::endl;
+    std::cerr<<"ls: ["<<gr2lits[gid]<<"]\n";
+    std::cerr<<"ql: "<<gr2qlev[gid]<<std::endl;
+    std::cerr<<"par: "<<gr2parent[gid]<<std::endl;
+    std::cerr<<"-----"<<std::endl;
+  }
+  return gid;
+}
+
+<<implementation>>=
+void Groups::empty_subtree(Node* n,size_t ql) {
+  auto& es=n->es;
+  const auto ml=levs.lev_count()-1;
+  assert(es.size()||ql==ml);
+  if(ql==ml) {
+    del_subtree(n);
+    return;
+  }
+  for(size_t i=1;i<es.size();++i) {
+    del_subtree(es[i].n);
+    delete es[i].n;
+  }
+  while(es.size()>1) es.pop_back();
+  es[0].l=lit_Undef;
+  es[0].ql=ql+1;
+  empty_subtree(es[0].n,ql+1);
+}
+
+<<implementation>>=
+void Groups::del_subtree(Node* n) {
+  FOR_EACH(i,n->es) {
+    del_subtree(i->n);
+    delete i->n;
+  }
+  n->es.clear();
+}
+
+<<private members>>=
+bool children_computed;
+vector<vector<size_t> > children;
+<<fields init>>=
+, children_computed(false)
+
+<<inline implementation>>=
+const vector<size_t>& Groups::get_children(size_t group) {
+  assert(group<group_count);
+  if(!children_computed) gen_child_relation();
+  assert(children.size()==group_count);
+  return children[group];
+}
+
+<<implementation>>=
+void Groups::gen_child_relation(){
+  assert(!children_computed);
+  children_computed=true;
+  children.resize(group_count);
+  for(size_t group=0; group<group_count; ++group) {
+     const auto p=parent(group);
+     if(p==group) continue;
+     children[p].push_back(group);
+  }
+}
+
+
+<<implementation>>=
+void Groups::gen_pins() {
+	assert( pins.empty() && group_count > 0 );
+	vector<size_t> pin2gr;
+	for( size_t gid = 0; gid < group_count; ++gid ) {
+		assert( gr2pins[gid].empty() );
+  		if( levs.level_type( qlev(gid) ) == UNIVERSAL ) continue; 
+		if( lits( gid ).empty() ) continue;
+		for( const Lit& lit : lits( gid ) ) {
+			Pin* pPin = new Pin( lit, pins.size(), qlev(gid) );
+			pins.push_back( pPin );
+			pin2gr.push_back( gid );
+			gr2pins[ gid ].push_back( pPin ); 
+			//cout << "Pid/gid/lit = " << pPin->id << "/" << pin2gr[pPin->id] << "/" << lit << endl; 
+		}
+	}
+	assert( pins.size() == pin2gr.size() );
+	vector<vector<Pin*> > pinsOfLit;
+	for( size_t p = 0; p < pins.size(); ++p ) {
+		Pin* pPin = pins[p];
+		unsigned x = pPin->lit.x;
+		if( x >= pinsOfLit.size()  ) pinsOfLit.resize( ( ( x+2 ) / 2 )*2 );
+		pinsOfLit[x].push_back( pPin );
+	}
+	//cout << "PinOfLit.size = " << pinsOfLit.size() << endl;
+	//for( unsigned x = 2; x < pinsOfLit.size(); ++x ) cout << "x=" << x << ".pins.size() =  " << pinsOfLit[x].size() << endl;
+	// x = 2*var+sign;	1.x=2,	1'.x=3,
+	connectBetweenPins( pin2gr, pinsOfLit );
+	mergePins( pin2gr, pinsOfLit );
+
+	for( size_t i = 0; i < pins.size(); ++i ) pins[i]->id = i; 
+}
+
+<<implementation>>=
+namespace CONNECT_BETWEEN_PINS {
+bool overlap( const LitSet& lits0, const LitSet& lits1 ) {
+	if( lits0.empty() || lits1.empty() ) return true;
+	for( size_t i = 0; i < lits0.size() - 1; ++i ) assert( lits0[i] < lits0[i+1] ); 	
+	for( size_t i = 0; i < lits1.size() - 1; ++i ) assert( lits1[i] < lits1[i+1] ); 	
+	size_t a = 0, b = 0;
+	while( true ) {
+		#define lit0 lits0[a]
+		#define lit1 lits1[b]
+		if( lit0 == ~lit1 ) {
+			return false;
+		}
+		if( lit0 < lit1 ) {
+			++a;
+			if( a == lits0.size() ) break;
+		}
+		else {
+			++b;
+			if( b == lits1.size() ) break;
+		}
+		#undef lit0
+		#undef lit1
+	}
+	return true;
+}
+bool overlap( const vector<LitSet>& gr2lits, const vector<size_t>& gr2parent, size_t g1, size_t g2 ) {
+	while( 1 ) {
+		if( g1 == gr2parent[ g1 ] ) { 
+			assert( g2 == gr2parent[ g2 ] ); 
+			return true;
+		}
+		g1 = gr2parent[ g1 ];
+		g2 = gr2parent[ g2 ];
+		if( !overlap( gr2lits[g1], gr2lits[g2] ) ) {
+			return false;
+		}
+	}
+	return true;
+}
+}
+
+<<implementation>>=
+void Groups::connectBetweenPins( const vector<size_t>& pin2gr, const vector<vector<Pin*> >& pinsOfLit ) {
+	vector<size_t> alwaysSatisfied;
+	using namespace CONNECT_BETWEEN_PINS;
+	for( unsigned posX = 2; posX + 1 < pinsOfLit.size(); posX += 2 ) {
+		//Var var = Var( posX / 2 );
+		//cout << "doing " << var << endl;
+		const unsigned negX = posX + 1;
+		const vector<Pin*>& posVec = pinsOfLit[ posX ];
+		const vector<Pin*>& negVec = pinsOfLit[ negX ];
+		for( unsigned pos = 0; pos < posVec.size(); ++pos ) { 
+			Pin* pPosPin = posVec[ pos ];
+			const size_t posGroup = pin2gr[ pPosPin->id ];
+			for( unsigned neg = 0; neg < negVec.size(); ++neg ) { 
+				Pin* pNegPin = negVec[ neg ];
+				const size_t negGroup = pin2gr[ pNegPin->id ];
+				//cout << pPosPin->id << " and " << pNegPin->id << " has conflicting literal." << endl;
+				
+				if( posGroup == negGroup ) {
+					static bool warned = false;
+					if( !warned ) {
+						cout << "Warning: pos and neg exist lit in same clause. For example( a1 + e1 + e1' + e2)" << endl;
+						warned = true;
+					}
+					alwaysSatisfied.push_back( posGroup );
+					continue;
+				}
+				if( overlap( gr2lits, gr2parent, posGroup, negGroup ) ) {
+					//cout << "new a " << var << "edge" << endl;
+					pPosPin->connectedPins.insert( std::pair<size_t, Pin*>( negGroup, pNegPin ) );
+					pNegPin->connectedPins.insert( std::pair<size_t, Pin*>( posGroup, pPosPin ) );
+				}
+			}
+		}
+	}
+	
+	if( !alwaysSatisfied.empty() ) cout << "groups always satisfied(gid):" << alwaysSatisfied << endl;
+	for( size_t gid : alwaysSatisfied ) {
+		for( Pin* pFromPin : gr2pins[gid] ) {
+			for( std::pair<size_t,Pin*> to : pFromPin->connectedPins ) to.second->connectedPins.erase( gid );
+			pFromPin->connectedPins.clear();
+		}
+	}
+}
+
+<<implementation>>=
+void Groups::mergePins( const vector<size_t>& pin2gr, const vector<vector<Pin*> >& pinsOfLit ) {
+	using std::map;
+	map<size_t, Pin*>::const_iterator it;
+	#ifndef NDEBUG
+	for( Pin* pP : pins ) assert( pP->mark == false );
+	cout << "before merging\t#P = " << pins.size() << endl;
+	//for( Pin* pP : pins ) cout << pP->id << ",";
+	//cout << endl;
+	//for( size_t gid : pin2gr ) cout << gid << ",";
+	//cout << endl;
+	//for( vector<Pin*> pins : gr2pins ) {
+	//	for( Pin* pP : pins ) cout << pP->id << ","; 
+	//	cout << endl;
+	//}
+	//cout << endl;
+	#endif
+	for( const vector<Pin*>& fromPins : pinsOfLit ) {
+		if( fromPins.empty() ) continue;
+		for( int fp0 = int(fromPins.size()) - 1; fp0 >= 1; --fp0 ) {
+			Pin* pFromPin0 = fromPins[fp0];
+			const map<size_t, Pin* >& toPins0 = pFromPin0->connectedPins;
+			for( size_t fp1 = 0; (int)fp1 < fp0; ++fp1 ) { 
+				Pin* pFromPin1 = fromPins[fp1];
+				const map<size_t, Pin* >& toPins1 = pFromPin1->connectedPins; 
+				if( toPins0 == toPins1 ) {
+					// keep pFromPin1, remove pFromPin0
+					//cout << "keep " << pFromPin1->id << " and kill " << pFromPin0->id << endl;
+					size_t groupFrom0 = pin2gr[pFromPin0->id];
+					for( it = toPins0.begin(); it != toPins0.end(); ++it ) it->second->connectedPins.erase( groupFrom0 );
+					//cout << "sz = " << gr2pins[ groupFrom0 ].size() << endl;
+					for( size_t i = 0; i < gr2pins[ groupFrom0 ].size(); ++i ) {
+						//cout << "id = " << gr2pins[ groupFrom0 ][i]->id << endl;
+						if( gr2pins[ groupFrom0 ][i] == pFromPin0 ) { gr2pins[ groupFrom0 ][i] = pFromPin1; break; }
+					}
+					pFromPin0->mark = true;
+					break;
+				}
+			}
+		}
+	}
+	for( Pin*& pP : pins ) {
+		if( pP->mark ) {
+			delete pP;
+			pP = NULL;
+		}
+	}
+	size_t newIt = 0;
+	for( size_t oriIt = 0; oriIt < pins.size(); ++oriIt ) {
+		if( pins[oriIt] == NULL ) continue;
+		pins[ newIt ] = pins[ oriIt ];
+		++newIt;
+	}
+	size_t nPop = pins.size() - newIt;
+	for( size_t i = 0; i < nPop; ++i ) pins.pop_back();
+}
+
+
+<<inline implementation>>=
+size_t Groups::parent(size_t gid) const{
+  assert(gid<group_count);
+  return gr2parent[gid];
+}
+
+<<inline implementation>>=
+const vector<size_t>& Groups::groups(size_t qlev) const {
+  assert(qlev<levs.lev_count());
+  return grouped_levels[qlev];
+}
+
+<<inline implementation>>=
+bool Groups::is_end(size_t gid) const {
+  assert(gid<group_count);
+  return gr2end[gid];
+}
+
+<<inline implementation>>=
+const LitSet& Groups::lits(size_t gid) const {
+  assert(gid<group_count);
+  return gr2lits[gid];
+}
+
+<<inline implementation>>=
+size_t Groups::qlev(size_t gid) const {
+  assert(gid<group_count);
+  return gr2qlev[gid];
+}
+
+<<inline implementation>>=
+const vector<Pin*>& Groups::getPins() {
+	return pins;
+}
+
+<<inline implementation>>=
+Pin* Groups::pin( size_t pid ) {
+	assert( pid < pins.size() && pins[pid]->id == pid );
+	return pins[pid];
+}
+
+<<inline implementation>>=
+const vector<Pin*>& Groups::getPins( size_t gid ) const {
+	return gr2pins[ gid ];
+}
+
+
+
+
+<<inline implementation>>= 
+void Groups::print() const {
+	return;
+	using std::cout;
+	using std::endl;
+	
+	for( size_t qlev = 0; qlev < levs.lev_count(); ++qlev ) {
+		cout << "lev " << qlev << " : " << groups( qlev ) << endl;
+	}
+
+	cout << "gid\tqlev\tparent_gid\tlits\tis_end" << endl; 
+	for( size_t gid = 0; gid < group_count; ++gid ) {
+		#ifndef DNDEBUG
+		if( parent(gid) == gid ) assert( qlev(gid) == 0 );
+		if( qlev(gid) == 0 ) assert( parent(gid) == gid ); 
+		if( qlev(gid) != 0 ) assert( qlev( parent(gid) ) == qlev(gid) - 1 );
+		#endif
+		cout << gid << "\t" << qlev(gid) << "\t" << parent(gid) << "\t" << lits(gid) << "\t"; 
+		if( is_end(gid) ) cout << "End";
+		cout << endl;
+	}
+}
+
+
+
+<<h includes>>=
+#include "Options.hh"
+#include "DataStructures.hh"
+#include "LevelInfo.hh"
+#include "LitBitSet.hh"
+#include <utility>
+#include "MiniSatExt.hh"
+#include <iostream>
+#include <map>
+#include <sstream> // Hank
+
+<<private members>>=
+bool add_clause(size_t clause_index);
+void del_subtree(Node* n);
+void gen_groups();
+void gen_groups(Node& n, size_t ql, size_t parent_group, vector<Lit>& accum);
+size_t add_group(bool is_end, LitSet ls, size_t ql, size_t parent_group);
+void empty_subtree(Node* n,size_t ql);
+void gen_child_relation();
+void gen_pins();
+void connectBetweenPins( const vector<size_t>& pin2gr, const vector<vector<Pin*> >& pinsOfLit );
+void mergePins( const vector<size_t>& pin2gr, const vector<vector<Pin*> >& pinsOfLit );

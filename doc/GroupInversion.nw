@@ -1,0 +1,63 @@
+% File:  GroupInversion.nw
+% Author: mikolas
+% Created on: Tue, Dec 16, 2014 6:01:45 PM
+% Copyright (C) 2014, Mikolas Janota
+<<GroupInversion.hh>>=
+#ifndef GROUPINVERSION_NW_6843
+#define GROUPINVERSION_NW_6843
+#include "Groups.hh"
+class GroupInversion {
+   public:
+     GroupInversion(const Groups& groups): groups(groups) {init();}
+     inline const vector<size_t>& operator []  (Lit l) const {
+       const auto rv=_get(l);
+       return rv==NULL ? empty : *rv;
+     }
+   private:
+     const std::vector<size_t> empty;
+     const Groups& groups;
+     std::vector<std::vector< size_t >*> inversion;
+     void init();
+     inline size_t lit_index(const Lit& l) const { return sign(l)? var(l)<<1 : (var(l)<<1) + 1; }
+     inline vector<size_t>* _get(Lit l) const {
+       const size_t i = lit_index(l);
+       return i<inversion.size() ? inversion[lit_index(l)] : NULL;
+     }
+
+     inline bool put(Lit l, vector<size_t>* c) {
+       const size_t i = lit_index(l);
+       if (inversion.size() <= i) inversion.resize(i+1, NULL);
+       const vector<size_t>* const o=inversion[i];
+       inversion[i]=c;
+       return o==NULL;
+     }
+
+};
+#endif
+
+<<GroupInversion.cc>>=
+#include "GroupInversion.hh"
+<<implementation>>
+
+<<implementation>>=
+void GroupInversion::init() {
+  const LevelInfo& levs=groups.get_levs();
+  auto ql=levs.lev_count();
+  while (ql) {
+    --ql;
+    const auto& gs=groups.groups(ql);
+    FOR_EACH(index,gs) {
+      const auto& gid=*index;
+      const auto& ls=groups.lits(*index);
+      FOR_EACH(literal_index,ls) {
+        const Lit& literal = *literal_index;
+        vector<size_t>* group_list = _get(literal);
+        if (group_list == NULL) {
+          group_list = new vector<size_t>();
+          put(literal,group_list);
+        }
+        group_list->push_back(gid);
+      }
+    }
+  }
+}
