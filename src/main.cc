@@ -34,7 +34,8 @@ int main(int argc, char** argv) {
 	char* nargv[3];
 	char o1[16];
 	if( argc == 2 ) {
-		strcpy(o1, 	"-geunw"	); //CUED
+		// strcpy(o1, "-geunw"); //CUED
+		strcpy(o1, "-sguwc"); //ClauSSat
 		nargv[0]=argv[0];
 		nargv[1]=o1;
 		nargv[2]=argv[1];
