@@ -3,7 +3,6 @@
 #include "LitBitSet.hh"
 #include <algorithm>
 #include <set>
-
 using std::max;
 using std::min;
 using std::make_pair;
@@ -41,7 +40,8 @@ QestoGroups::QestoGroups(const Options& opt,
 
 ,onsetId( levs.maxv() + 1, -1 )
 ,offsetId( levs.maxv() + 1, -1 )
-,definedId( levs.lev_count(), -1 )
+,definedId( levs.lev_count(), 0 )
+,blockId( levs.lev_count(), 0)
 ,sk_situationId( -1 )
 ,he_situationId( -1 )
 
@@ -50,7 +50,8 @@ QestoGroups::QestoGroups(const Options& opt,
 {
   assert(levs.lev_count());
   assert( opt.get_ssat() || level_type(levs.lev_count()-1)==EXISTENTIAL);
-  if( !opt.get_ssat() && level_type(levs.lev_count()-1) != EXISTENTIAL ) cout << "Error: The last level is universal." << endl;
+  if( !opt.get_ssat() && level_type(levs.lev_count()-1) != EXISTENTIAL ) 
+  	cout << "Error: The last level is universal." << endl;
   init();
   if(verb>5){
     for(size_t ul=0;ul<levs.lev_count();++ul){
@@ -66,7 +67,7 @@ void QestoGroups::init(){
 	allocate_selectors();
 	init_game_rules();
 	init_svars( NULL );
-    assign_pure_lits();
+    //assign_pure_lits();
 	if( !opt.get_ssat() && opt.get_ex_inst() ) { inst_e(); }
     if( opt.get_ssat() ) {
         sel_caches.resize(levs.lev_count());
@@ -88,14 +89,18 @@ void QestoGroups::init_svars(const GroupInversion* gin) {
 void QestoGroups::encode_group(size_t qlev,size_t g,vector<Lit>& saux, int flag = 0 ){
 	if(is_encoded[g]) return;
 	switch(flag) {
-		case 1: assert(level_type(qlev)==EXISTENTIAL); break;//init_game_rules_exists // Only for exist node who has no exist child
-		case 2: break;//init_svars
+		//init_game_rules_exists 
+		// Only for exist node who has no exist child
+		case 1: assert(level_type(qlev)==EXISTENTIAL); break;
+		//init_svars
+		case 2: break;
 		default : assert(0);
 	}
 	is_encoded[g]=true;
 	if(verb>5)std::cerr<<"encode_group "<<g<<"@"<<qlev<<std::endl;
 	saux.clear();
 	/* if(qlev) saux.push_back(mkLit(p(qlev,groups.parent(g)))); */
+	// S_k = S_(k-1) & (l_i')
 	saux.push_back(qlev? mkLit(p(qlev,groups.parent(g))) : lit_Undef);
 	if( opt.get_pin() && level_type(qlev) == EXISTENTIAL ) {
 		const vector<Pin*>  pins = groups.getPins( g ); 
@@ -112,7 +117,8 @@ void QestoGroups::encode_group(size_t qlev,size_t g,vector<Lit>& saux, int flag 
 	#else
 	encode_and(abstractions[qlev],sel_lit,lev_sel_lit,saux);
 	#endif
-	// Ex. sel_lit = 3, saux = {1,6,8} solver.add(3'+1)(3'+6)(3'+8)(1'+6'+8'+3) = ( 3 == 1&6&8 ) = ( !this == !parent.top + {lits} )
+	// Ex. sel_lit = 3, saux = {1,6,8} solver.add(3'+1)(3'+6)(3'+8)(1'+6'+8'+3) 
+	// 						 = ( 3 == 1&6&8 ) = ( !this == !parent.top + {lits} )
 }
 
 void QestoGroups::init_game_rules(){
@@ -138,7 +144,8 @@ void QestoGroups::init_game_rules(){
 		vec<Lit> clause;
 		for( size_t pid = 0; pid < groups.getPins().size(); ++pid ) {
 			Pin* p0 = groups.pin(pid);
-			for( connectedIter= p0->connectedPins.begin(); connectedIter != p0->connectedPins.end(); ++connectedIter ) {
+			for( connectedIter  = p0->connectedPins.begin(); 
+				 connectedIter != p0->connectedPins.end(); ++connectedIter ) {
 				Pin* p1 = connectedIter->second;
 				if( p0->id > p1->id ) continue;
 				size_t qlev = p1->qlev;
@@ -189,7 +196,8 @@ bool QestoGroups::init_game_rules_exists(size_t group, vector<Lit>& universalLit
 	for( size_t gi : children ) {
 		vector<Lit> ul;
 		if( init_game_rules_exists( gi, ul ) ) {
-			if( opt.get_cert() && ( !anyChildHasNoExiLit || universalLits.size() > ul.size() ) ) universalLits = ul; // record	
+			if( opt.get_cert() && ( !anyChildHasNoExiLit || universalLits.size() > ul.size() ) ) 
+				universalLits = ul; // record	
 			anyChildHasNoExiLit = true; 
 		}
 	}
@@ -212,7 +220,8 @@ bool QestoGroups::init_game_rules_exists(size_t group, vector<Lit>& universalLit
 		}
   	}
 	all_universal &= (qt==UNIVERSAL) || groups.lits(group).empty();
-	if( opt.get_cert() && all_universal && qt==UNIVERSAL ) for( Lit lit : groups.lits(group) ) universalLits.push_back(~lit);
+	if( opt.get_cert() && all_universal && qt==UNIVERSAL ) 
+		for( Lit lit : groups.lits(group) ) universalLits.push_back(~lit);
   	return all_universal;
 }
 
@@ -273,10 +282,11 @@ QestoGroups::~QestoGroups() {
 	delete [] abstractions;
 }
 
-
+// solving
 
 lbool QestoGroups::solve(size_t confl_budget, ofstream& skolemFile, ofstream& herbrandFile ) {
 	//cout << "QestoGroups::solve(cb) :" << endl;
+	// callee
 	size_t qlev=0;
 	vector<size_t> conflict_groups;
 	vec<Lit> conflict_clause;
@@ -293,9 +303,9 @@ lbool QestoGroups::solve(size_t confl_budget, ofstream& skolemFile, ofstream& he
 		if(opt.get_lazy()&&level_type(qlev)==EXISTENTIAL) {
 			const vector<size_t>& gs=groups.groups(qlev);
 			FOR_EACH(gi,gs) {
-			const size_t g=*gi;
-			const bool psel = !qlev || svalue(groups.parent(g));
-			if(psel) encode_group(qlev,g,saux);
+				const size_t g=*gi;
+				const bool psel = !qlev || svalue(groups.parent(g));
+				if(psel) encode_group(qlev,g,saux);
 			}
 		}
     	
@@ -303,12 +313,16 @@ lbool QestoGroups::solve(size_t confl_budget, ofstream& skolemFile, ofstream& he
 		if( qlev > 0 ) {
 			if( opt.get_strong_pri() && level_type( qlev ) == EXISTENTIAL ) {
 				for( size_t gi : groups.groups( qlev - 1 ) ) {
-    				if( svalue(gi) ) decisions.push( mkLit( p( qlev, gi ) ) );
-					else for( size_t gc : groups.get_children( gi ) ) decisions.push( ~mkLit( s( qlev, gc ) ) );
+    				if( svalue(gi) ) 
+						decisions.push( mkLit( p( qlev, gi ) ) );
+					else 
+						for( size_t gc : groups.get_children( gi ) ) 
+							decisions.push( ~mkLit( s( qlev, gc ) ) );
 				}
 			}
 			else {
 				for( size_t gi : groups.groups( qlev - 1 ) ) {
+					// parent selection as assumption
     				decisions.push( svalue(gi) ? mkLit( p(qlev,gi)) : ~mkLit( p( qlev, gi ) ) );
 				}
 			}
@@ -368,7 +382,7 @@ lbool QestoGroups::solve(size_t confl_budget, ofstream& skolemFile, ofstream& he
 				abstractions[qlev].waitForRebuildingOrderHeap();
 			}
 		}
-    	const bool sat = abstractions[qlev].solve( decisions );
+    	const bool sat = abstractions[qlev].solve( decisions ); // parent selection as assumption
 		//TODO Last level
 		if(debug) cout << getSolverName( qlev ) << ".solve" << decisions;
 		if(debug) cout << ( sat ? " = SAT":" = UNSAT" )<< endl;
@@ -384,7 +398,8 @@ lbool QestoGroups::solve(size_t confl_budget, ofstream& skolemFile, ofstream& he
 	        		for( size_t gi : groups.groups( qlev ) ) {
 						for( Pin* pP : groups.getPins( gi ) ) {
 							const Var vP = pinVar( qlev, pP->id );
-							if( eval( mkLit( vP ) ,abstractions[ qlev ].model ) == l_True) cout << 'p' << pP->id << " * ";
+							if( eval( mkLit( vP ) ,abstractions[ qlev ].model ) == l_True) 
+								cout << 'p' << pP->id << " * ";
 						}
 					}
 				} else {
@@ -413,11 +428,14 @@ lbool QestoGroups::solve(size_t confl_budget, ofstream& skolemFile, ofstream& he
   				FOR_EACH( gi, conflict_groups ) {
     				const auto g=*gi;
     				const QuantifierType gt = group_type(g);
-    				encode_group( bt_qlev, g, saux, 3 );
+    				//encode_group( bt_qlev, g, saux, 3 ); //TODO?
+
     				conflict_clause.push( mkLit( s( bt_qlev, g ), gt == EXISTENTIAL ) );
   				}
-  				if(verb>3)std::cerr<<"cc:"<<conflict_groups<<std::endl;
-  				if(verb>2)std::cerr<<"cc sz:"<<conflict_groups.size()<<std::endl;
+  				if(verb>3)
+					std::cerr<<"cc:"<<conflict_groups<<std::endl;
+  				if(verb>2)
+					std::cerr<<"cc sz:"<<conflict_groups.size()<<std::endl;
 				if( debug ) cout << getSolverName(bt_qlev) << ".addClause" << conflict_clause << endl;
   				abstractions[bt_qlev].addClause_(conflict_clause);
 				qlev=bt_qlev;
@@ -433,24 +451,29 @@ lbool QestoGroups::solve(size_t confl_budget, ofstream& skolemFile, ofstream& he
 }
 
 bool QestoGroups::solve( const string& skolemName, const string& herbrandName, bool alreadyUnsat ) {
+	//caller
 	if( alreadyUnsat ) cout << "Contains an empty clause in cnf." << endl;
 	ofstream skolemFile, herbrandFile;
+	// fuck you 
 	if( 0 && opt.get_cert() && opt.get_pin() ) {
 		for( size_t qlev = 0; qlev < levs.lev_count(); ++qlev ) {
 			if( level_type( qlev ) == UNIVERSAL ) continue;
 			vector<size_t> gs = groups.groups(qlev);
 			for( size_t gi : gs ) {
 				cout << 'g' << gi << "(";
-				for( const Lit li : groups.lits( gi ) ) cout << li << "+";	
+				for( const Lit li : groups.lits( gi ) ) 
+					cout << li << "+";	
 				cout << ")@E" << qlev << "{";
-				for( const Pin* pP : groups.getPins( gi ) ) cout << pP->getName() << "(" << pP->lit << "),";
+				for( const Pin* pP : groups.getPins( gi ) ) 
+					cout << pP->getName() << "(" << pP->lit << "),";
 				cout << endl;
 			}
 		}
 	}
 	if( opt.get_cert() ) {
-		skolemFile.open( skolemName, ofstream::out | std::ofstream::trunc );
-		herbrandFile.open( herbrandName, ofstream::out | std::ofstream::trunc );
+		//cout << "GetCert!!" << endl;
+		skolemFile.open( skolemName.c_str(), ofstream::out | std::ofstream::trunc );
+		herbrandFile.open( herbrandName.c_str(), ofstream::out | std::ofstream::trunc );
 		certification_open( skolemFile, herbrandFile );
 	}
 	int curr_restarts = 0;
@@ -470,16 +493,22 @@ bool QestoGroups::solve( const string& skolemName, const string& herbrandName, b
 
 	if( opt.get_cert() ) {
 		bool skol = status==l_True;
-		if( skol && herbrandFile.is_open() ) herbrandFile.close();
-		else if( !skol && skolemFile.is_open() ) skolemFile.close();
+		if( skol && herbrandFile.is_open() ) 
+			herbrandFile.close();
+		else if( !skol && skolemFile.is_open() ) 
+			skolemFile.close();
 
-		if( skol ) if( remove( herbrandName.c_str() ) ) cout << "Warning deletion!" << endl;
-		if( !skol ) if( remove( skolemName.c_str() ) ) cout << "Warning deletion!" << endl;
+		if( skol ) if( remove( herbrandName.c_str() ) ) 
+			cout << "Warning deletion!" << endl;
+		if( !skol ) if( remove( skolemName.c_str() ) ) 
+			cout << "Warning deletion!" << endl;
 		
 		if( skol && skolemFile.tellp() > long(5*1024)*long(1024*1024) ) {
-			if( remove( skolemName.c_str() ) ) cout << "Warning deletion!" << endl;
+			if( remove( skolemName.c_str() ) ) 
+				cout << "Warning deletion!" << endl;
 		} else if ( !skol && herbrandFile.tellp() > long(5*1024)*long(1024*1024) ) {
-			if( remove( skolemName.c_str() ) ) cout << "Warning deletion!" << endl;
+			if( remove( skolemName.c_str() ) ) 
+				cout << "Warning deletion!" << endl;
 		} else certification_close( skol ? skolemFile : herbrandFile, skol );
 	}
 
@@ -494,16 +523,20 @@ void QestoGroups::certification_open( ofstream& skolemFile, ofstream& herbrandFi
 		for( size_t lv = 0; lv < levs.lev_count(); ++lv ) {
 			const VarVector& lvs = levs.level_vars( lv );
 			for( const Var& v : lvs ) {
-				if( level_type( lv ) == EXISTENTIAL ) skolemFile << ' ' << v;
-				if( level_type( lv ) == UNIVERSAL ) herbrandFile << ' ' << v;
+				if( level_type( lv ) == EXISTENTIAL ) 
+					skolemFile << ' ' << v;
+				if( level_type( lv ) == UNIVERSAL ) 
+					herbrandFile << ' ' << v;
 			}
 		}
 	}
 	for( size_t lv = 0; lv < levs.lev_count(); ++lv ) {
 		const VarVector& lvs = levs.level_vars( lv );
 		for( const Var& v : lvs ) {
-			if( level_type( lv ) == UNIVERSAL ) skolemFile << ' ' << v;
-			if( level_type( lv ) == EXISTENTIAL ) herbrandFile << ' ' << v;
+			if( level_type( lv ) == UNIVERSAL ) 
+				skolemFile << ' ' << v;
+			if( level_type( lv ) == EXISTENTIAL ) 
+				herbrandFile << ' ' << v;
 		}
 	}
 
@@ -513,12 +546,16 @@ void QestoGroups::certification_open( ofstream& skolemFile, ofstream& herbrandFi
 	for( size_t lv = 0; lv < levs.lev_count(); ++lv ) {
 		const VarVector& lvs = levs.level_vars( lv );
 		ofstream* file = NULL;
-		if( level_type( lv ) == EXISTENTIAL ) file = &skolemFile;
-		else if( level_type( lv ) == UNIVERSAL ) file = &herbrandFile;
+		if( level_type( lv ) == EXISTENTIAL ) 
+			file = &skolemFile;
+		else if( level_type( lv ) == UNIVERSAL ) 
+			file = &herbrandFile;
 		else assert(0);
 		for( const Var& v : lvs ) {
-			if( opt.get_cert2Mfs() ) *file << " n" << v;
-			else *file << ' ' << v;
+			if( opt.get_cert2Mfs() ) 
+				*file << " n" << v;
+			else 
+				*file << ' ' << v;
 		}
 	}
 
@@ -528,8 +565,10 @@ void QestoGroups::certification_open( ofstream& skolemFile, ofstream& herbrandFi
 		for( size_t lv = 0; lv < levs.lev_count(); ++lv ) {
 			const VarVector& lvs = levs.level_vars( lv );
 			for( const Var& v : lvs ) {
-				if( level_type( lv ) == EXISTENTIAL ) skolemFile << " c" << v;
-				if( level_type( lv ) == UNIVERSAL ) herbrandFile << " c" << v;
+				if( level_type( lv ) == EXISTENTIAL ) 
+					skolemFile << " c" << v;
+				if( level_type( lv ) == UNIVERSAL ) 
+					herbrandFile << " c" << v;
 			}
 		}
 	}
@@ -542,8 +581,10 @@ void QestoGroups::certification_open( ofstream& skolemFile, ofstream& herbrandFi
 
 	for( Var v = 1; v <= levs.maxv(); ++v ) {
 		ofstream* file;
-		if( levs.type( v ) == EXISTENTIAL ) file = &skolemFile;
-		else if( levs.type( v ) == UNIVERSAL ) file = &herbrandFile;
+		if( levs.type( v ) == EXISTENTIAL ) 
+			file = &skolemFile;
+		else if( levs.type( v ) == UNIVERSAL ) 
+			file = &herbrandFile;
 		else continue;
 		if( opt.get_cert2Mfs() ) {
 			*file << ".names " << v << "n0" << endl << 0 << endl;
@@ -551,16 +592,18 @@ void QestoGroups::certification_open( ofstream& skolemFile, ofstream& herbrandFi
 			*file << ".names " << v << "f0" << endl << 0 << endl;
 			offsetId[v] = 0;
 		} else {
-			*file << ".names " << v << "n0" << endl << 0 << endl;
+			*file << ".names " << v << "n0" << endl << 0 << endl; // connect to onsetId
 			onsetId[v] = 0;
 		}
 	}
 	for( size_t lv = 0; lv < levs.lev_count(); ++lv ) {
 		ofstream* file;
-		if( level_type( lv ) == EXISTENTIAL ) file = &skolemFile;
-		else if( level_type( lv ) == UNIVERSAL ) file = &herbrandFile;
+		if( level_type( lv ) == EXISTENTIAL ) 
+			file = &skolemFile;
+		else if( level_type( lv ) == UNIVERSAL ) 
+			file = &herbrandFile;
 		else continue;
-		*file << ".names " << lv << "d0" << endl << 0 << endl;
+		*file << ".names " << lv << "d0" << endl << 0 << endl; // already explored boolean space
 		definedId[lv] = 0;
 	}
 
@@ -591,6 +634,7 @@ void QestoGroups::certification_open( ofstream& skolemFile, ofstream& herbrandFi
 }
 
 template<class T> string toStr( const T& num ) { ostringstream o; o << num; return o.str(); }
+
 void QestoGroups::certification_close( ofstream& file, bool skol ) {
 	if( opt.get_ex_inst() && !skol && opt.get_cert2Mfs() ) {
 		file << "#----INST_EX-START----" << endl;
@@ -608,7 +652,8 @@ void QestoGroups::certification_close( ofstream& file, bool skol ) {
 					lastExiGroup = gid;
 					break;
 				}
-				if( groups.parent( gid ) != gid ) gid = groups.parent( gid );
+				if( groups.parent( gid ) != gid ) 
+					gid = groups.parent( gid );
 				else break;
 			}
 			if( lastExiGroup == -1 ) continue;
@@ -618,7 +663,8 @@ void QestoGroups::certification_close( ofstream& file, bool skol ) {
 			while( true ) {
 				if( level_type( groups.qlev( gid ) ) == UNIVERSAL && !groups.lits( gid ).empty() ) 
 					uniGroups.insert( gid );
-				if( groups.parent( gid ) != gid ) gid = groups.parent( gid );
+				if( groups.parent( gid ) != gid ) 
+					gid = groups.parent( gid );
 				else break;
 			}
 		}
@@ -626,10 +672,12 @@ void QestoGroups::certification_close( ofstream& file, bool skol ) {
 		vector<set<size_t> > situationsOfEachOffset( levs.maxv()+1 );
 		for( size_t gid : uniGroups ) {
 			size_t pid;
-			if( gid == groups.parent( gid ) ) pid = SIZE_MAX;
+			if( gid == groups.parent( gid ) ) 
+				pid = SIZE_MAX;
 			else {
 				pid = groups.parent( gid );
-				while( groups.lits( pid).empty() && groups.parent( pid ) != pid ) pid = groups.parent( pid );
+				while( groups.lits( pid).empty() && groups.parent( pid ) != pid ) 
+					pid = groups.parent( pid );
 				if( groups.lits( pid ).empty() ) {
 					assert( pid == groups.parent( pid ) );
 					pid = SIZE_MAX;
@@ -685,7 +733,8 @@ void QestoGroups::certification_close( ofstream& file, bool skol ) {
 			if( opt.get_cert2Mfs() ) {
 				file << ".names " << v << "n" << onsetId[v] << " " << "n" << v << endl << "1 1" << endl;
 				file << ".names " << 'n' << v << " " << v << 'f' << offsetId[v] << " c" << v << endl << "00 0" << endl;
-			} else file << ".names " << v << "n" << onsetId[v] << " " << v << endl << "1 1" << endl;
+			} else 
+				file << ".names " << v << "n" << onsetId[v] << " " << v << endl << "1 1" << endl;
 		}
 	}
 	file << "#-----CONNECT-END-----" << endl;
@@ -697,6 +746,7 @@ void QestoGroups::certification_close( ofstream& file, bool skol ) {
 	
 	
 	file << "#----GROUPS-START----" << endl;
+	// net gi at qlev means C_k^(<=qlev)
 	for( size_t qlev = 0; qlev < levs.lev_count(); ++qlev ) {
 		vector<size_t> gs = groups.groups(qlev);
 		for( size_t gi : gs ) {
@@ -719,7 +769,8 @@ void QestoGroups::certification_close( ofstream& file, bool skol ) {
 				giter = groups.parent( giter );
 			}
 			file << groups.getName( gi ) << endl;
-	       	for( bool inv : inputsInv ) file << ( inv?"1":"0" );
+	       	for( bool inv : inputsInv ) 
+				file << ( inv?"1":"0" );
 			file << " 0" << endl;
 		}
 	}
@@ -729,52 +780,63 @@ void QestoGroups::certification_close( ofstream& file, bool skol ) {
 	file.close();
 }
 
-bool QestoGroups::analyze(size_t qlev,
-                    size_t& bt_qlev, vector<size_t>& conflict_groups, ofstream& skolemFile, ofstream& herbrandFile ) {
+bool QestoGroups::analyze(size_t qlev, size_t& bt_qlev, vector<size_t>& conflict_groups, 
+						  ofstream& skolemFile, ofstream& herbrandFile ) 
+{
 	QuantifierType loser=level_type(qlev);
-	if(verb>2)std::cerr<<"("<<tot_bt_count<<") analyse loser:"<<loser<<"@"<<qlev<<std::endl;
+	if(verb>2)
+		std::cerr << "(" << tot_bt_count << ") analyse loser:" << loser << "@" << qlev << std::endl;
 	bool ret;
 	const bool skol = ( loser == UNIVERSAL );
 	vector<size_t> low_conflict_groups;
 
-	if( skol ) ret = analyze_univ(qlev,bt_qlev,low_conflict_groups, skolemFile);
-	else ret = analyze_exists(qlev,bt_qlev,low_conflict_groups, herbrandFile );
+	if( skol ) 
+		ret = analyze_univ(qlev,bt_qlev,low_conflict_groups, skolemFile);
+	else 
+		ret = analyze_exists(qlev,bt_qlev,low_conflict_groups, herbrandFile );
 
-	if( ret ) for( size_t& g : low_conflict_groups ) conflict_groups.push_back( find_parent( bt_qlev, g ) );  
+	if( ret ) 
+		for( size_t& g : low_conflict_groups ) 	
+			conflict_groups.push_back( find_parent( bt_qlev, g ) );  
+	
+	// if( 0 || debug) {
+	// 	cout << "#- " << ( skol ? "Sk " : "He " );
+	// 	for( size_t lv = ( ret ? bt_qlev + 1 : 0 ); lv < qlev; ++lv ) { 
+	// 		if( skol && level_type(lv) != EXISTENTIAL ) continue;
+	// 		if( !skol && level_type(lv) != UNIVERSAL ) continue;
+	// 		if( opt.get_pin() && skol ) {
+    //     		for( size_t gi : groups.groups( lv ) ) 
+	// 				for( Pin* pP : groups.getPins( gi ) ) 
+	// 					if( eval( mkLit( pinVar(lv,pP->id) ) ,abstractions[ lv ].model ) == l_True ) 
+	// 						cout <<'p'<< pP->id << " * ";
+	// 		} else {
+	// 			for( const Var& v : levs.level_vars( lv ) ) {
+	// 				assert( abstractions[ lv ].model[v] != l_Undef );
+	// 				cout << mkLit( v, abstractions[ lv ].model[v] == l_False ) << " * ";
+	// 			}
+	// 		}
+	// 	}
+	// 	cout << " @ ";
+	// 	for( size_t gid : conflict_groups ) 
+	// 		cout << ( skol ? "" : "!" ) << 'g' << gid << " * ";
+	// 	cout << endl;
+	// }
 
-	if( 0 || debug) {
-		cout << "#- " << ( skol ? "Sk " : "He " );
-		for( size_t lv = ( ret ? bt_qlev + 1 : 0 ); lv < qlev; ++lv ) { 
-			if( skol && level_type(lv) != EXISTENTIAL ) continue;
-			if( !skol && level_type(lv) != UNIVERSAL ) continue;
-			if( opt.get_pin() && skol ) {
-        		for( size_t gi : groups.groups( lv ) ) 
-					for( Pin* pP : groups.getPins( gi ) ) 
-						if( eval( mkLit( pinVar(lv,pP->id) ) ,abstractions[ lv ].model ) == l_True ) 
-							cout <<'p'<< pP->id << " * ";
-			} else {
-				for( const Var& v : levs.level_vars( lv ) ) {
-					assert( abstractions[ lv ].model[v] != l_Undef );
-					cout << mkLit( v, abstractions[ lv ].model[v] == l_False ) << " * ";
-				}
-			}
-		}
-		cout << " @ ";
-		for( size_t gid : conflict_groups ) cout << ( skol ? "" : "!" ) << 'g' << gid << " * ";
-		cout << endl;
-	}
 	if( opt.get_cert() ) {
 		if( opt.get_pin() && skol ) 
 			analyze_cert_pin( qlev, bt_qlev, conflict_groups, skolemFile, ret ); // with analyze_univ
 		else //with analyze_exists
-			analyze_cert( qlev, bt_qlev, conflict_groups, ( skol ? skolemFile : herbrandFile ), skol, ret, low_conflict_groups );
+			analyze_cert( qlev, bt_qlev, conflict_groups, 
+						  ( skol ? skolemFile : herbrandFile ), skol, ret, low_conflict_groups );
 	}
 	return ret;
 }
 
 	
 #define BIG_HERBRAND_SIZE 0
-void QestoGroups::analyze_cert( size_t qlev,size_t bt_qlev,const vector<size_t>& conflict_groups,ofstream& file,bool skol,bool ret, const vector<size_t>& low_conflict_groups )
+void QestoGroups::analyze_cert( size_t qlev,size_t bt_qlev,const vector<size_t>& conflict_groups,
+								ofstream& file, bool skol, bool ret, 
+								const vector<size_t>& low_conflict_groups )
 { 
 	// used by existential_analysis
 	assert( opt.get_cert() );
@@ -784,13 +846,18 @@ void QestoGroups::analyze_cert( size_t qlev,size_t bt_qlev,const vector<size_t>&
 		return;
 	}
 	vector<vector<Lit> > moveLit( levs.lev_count() );
-	analyze_cert_extract_move( qlev, bt_qlev, conflict_groups, file, skol, ret, moveLit, low_conflict_groups );
+	analyze_cert_extract_move( qlev, bt_qlev, conflict_groups, file, skol, ret,
+							   moveLit, low_conflict_groups );
 	analyze_cert( file, skol, moveLit, conflict_groups );
 }
 
 
-void QestoGroups::analyze_cert_extract_move
-( size_t qlev,size_t bt_qlev,const vector<size_t>& conflict_groups, ofstream& file, bool skol,bool ret,vector<vector<Lit> >& moveLit, const vector<size_t>& low_conflict_groups ) 
+void 
+QestoGroups::analyze_cert_extract_move( size_t qlev, size_t bt_qlev,
+										const vector<size_t>& conflict_groups, 
+										ofstream& file, bool skol, bool ret,
+										vector<vector<Lit> >& moveLit, 
+										const vector<size_t>& low_conflict_groups ) 
 {
 	// used by existential_analysis
 	assert( opt.get_cert() );
@@ -811,11 +878,13 @@ void QestoGroups::analyze_cert_extract_move
 	if( BIG_HERBRAND_SIZE ) return;
 	set<size_t>* pCc = new set<size_t>(); // pointer of conflict children
 	assert( !low_conflict_groups.empty() );
-	for( const size_t & gid : low_conflict_groups ) pCc->insert( gid );
+	for( const size_t & gid : low_conflict_groups ) 
+		pCc->insert( gid );
 	assert( qlev > 0 );
 	size_t levelOfCc = ( ret ? qlev - 1 : 0 );
     #ifndef NDEBUG
-	for( size_t gid : *pCc ) assert( groups.qlev( gid ) == levelOfCc );
+	for( size_t gid : *pCc ) 
+		assert( groups.qlev( gid ) == levelOfCc );
     #endif
 	for( int lv = int(qlev) - 1; lv >= ( ret ? int(bt_qlev) + 1 : 0 ); --lv ) {
 		if( moveLit[lv].empty() ) continue;
@@ -824,17 +893,23 @@ void QestoGroups::analyze_cert_extract_move
 		while( int( levelOfCc ) != lv ) {
 			assert( int( levelOfCc ) > lv );
 			assert( levelOfCc > 0 );
+
 			set<size_t>* pTemp = new set<size_t>();
-			for( size_t gid : *pCc ) pTemp->insert( groups.parent( gid ) );
+			for( size_t gid : *pCc ) 
+				pTemp->insert( groups.parent( gid ) );
 			delete pCc;
 			pCc = pTemp;
 			--levelOfCc;
+
             #ifndef NDEBUG
-			for( size_t gid : *pCc ) assert( groups.qlev( gid ) == levelOfCc );
+			for( size_t gid : *pCc ) 
+				assert( groups.qlev( gid ) == levelOfCc );
             #endif
 		}
 		vector<bool> appear( 2*levs.maxv()+1, false );
-		for( size_t gC : *pCc ) for( Lit u : groups.lits( gC ) ) appear[ u.x ] = true;
+		for( size_t gC : *pCc ) 
+			for( Lit u : groups.lits( gC ) ) 
+				appear[ u.x ] = true;
 		vector<bool> canBeRemoved( moveLit[lv].size(), false );
 		bool someMoveCanBeRemoved = false;
 		for( int i = 0; i < int( moveLit[lv].size() ); ++i ) {
@@ -846,14 +921,18 @@ void QestoGroups::analyze_cert_extract_move
 		}
 		if( someMoveCanBeRemoved ) {
 			vector<Lit> vTemp;
-			for( int i = 0; i < int( moveLit[lv].size() ); ++i ) if( !canBeRemoved[i] ) vTemp.push_back( moveLit[lv][i] );
+			for( int i = 0; i < int( moveLit[lv].size() ); ++i ) 
+				if( !canBeRemoved[i] ) 
+					vTemp.push_back( moveLit[lv][i] );
 			moveLit[lv] = vTemp;
 		}
 	}
 	delete pCc;	
 }
 
-void QestoGroups::analyze_cert( ofstream& file, bool skol, const vector<vector<Lit> >& moveLit, const vector<size_t>& conflict_groups )
+void QestoGroups::analyze_cert( ofstream& file, bool skol, 
+								const vector<vector<Lit> >& moveLit, 
+								const vector<size_t>& conflict_groups )
 {
 	// used by both rules_exist and existential_analysis
 	if( file.is_open() && file.tellp() > long(5*1024)*long(1024*1024) ) {
@@ -863,15 +942,20 @@ void QestoGroups::analyze_cert( ofstream& file, bool skol, const vector<vector<L
 	assert( opt.get_cert() );
 	if( debug ) {
 		file << "#- " << ( skol ? "Sk " : "He " );
-		for( const vector<Lit>& vl : moveLit ) for( Lit lit : vl ) file << lit << " * ";
+		for( const vector<Lit>& vl : moveLit ) 
+			for( Lit lit : vl ) 
+				file << lit << " * ";
 		file << " @ ";
-		for( size_t gid : conflict_groups ) file << ( skol ? "" : "!" ) << 'g' << gid << " * ";
+		for( size_t gid : conflict_groups ) 
+			file << ( skol ? "" : "!" ) << 'g' << gid << " * ";
 		file << endl;
 	}
+
 	set<size_t> conflict_groups2;
 	for( size_t gid : conflict_groups ) {
 		size_t p = gid;
-		while( groups.lits( p ).empty() && groups.parent( p ) != p ) p = groups.parent(p);
+		while( groups.lits( p ).empty() && groups.parent( p ) != p ) 
+			p = groups.parent(p);
 		conflict_groups2.insert( p );
 	}
 
@@ -881,10 +965,14 @@ void QestoGroups::analyze_cert( ofstream& file, bool skol, const vector<vector<L
 	{
 		ostringstream line1, line2;
 		line1 << ".names ";
-		for( const size_t gid : conflict_groups2 ) line1 << groups.getName( gid ) << ' ';
-		line1 << "s" << situationId;
-		line2 << string( conflict_groups2.size(), (skol?'1':'0') ) << " 1";
-		for( const size_t gid : conflict_groups2 ) groups.setWaitingForBlifWritting( gid, skol );
+		for( const size_t gid : conflict_groups2 ) 
+			line1 << groups.getName( gid ) << ' ';
+		line1 << "s" << situationId; // corresponds to lambda(winning condition) in CUED
+ 		line2 << string( conflict_groups2.size(), (skol?'1':'0') ) << " 1"; 
+		// winning condition for skol : disselect some grps
+		//                       herb : select some grps
+		for( const size_t gid : conflict_groups2 ) 
+			groups.setWaitingForBlifWritting( gid, skol );
 		file << line1.str() << endl << line2.str() << endl;
 	}
 	const string s_oriSitu = 's' + toStr( situationId ) + ' ';
@@ -910,10 +998,10 @@ void QestoGroups::analyze_cert( ofstream& file, bool skol, const vector<vector<L
 		}
 		
 		lastL = lv1;
-		const string s_def = toStr(lv1) + 'd' + toStr( definedId[lv1] ) + ' ';
-		const string s_situ = 's' + toStr( situationId ) + ' ';
+		const string s_def = toStr(lv1) + 'd' + toStr( definedId[lv1] ) + ' '; // explored space
+		const string s_situ = 's' + toStr( situationId ) + ' '; // lambda in CUED
 		static unsigned notDAndSId = 1;
-		const string s_r = 'r' + toStr( notDAndSId ) + ' ';
+		const string s_r = 'r' + toStr( notDAndSId ) + ' '; // define'&situation
 		file << ".names " << s_def << s_situ << s_r << endl;
 		file << "01 1" << endl;
 		
@@ -935,8 +1023,10 @@ void QestoGroups::analyze_cert( ofstream& file, bool skol, const vector<vector<L
 			line1 << s_r << s_ev_n << s_ev_nn;
 			line2 << "00 0";
 			file << line1.str() << endl << line2.str() << endl;
-			if( !sign(el) ) ++onsetId[ev];
-			else ++offsetId[ev];
+			if( !sign(el) ) 
+				++onsetId[ev];
+			else 
+				++offsetId[ev];
 		}
 		++notDAndSId;
 		
@@ -981,7 +1071,8 @@ int QestoGroups::fillChildren( size_t gid, vector<bool>& mark, size_t endlev ) {
 	return nMark;
 }
 
-void QestoGroups::analyze_cert_pin(size_t qlev,size_t bt_qlev,const vector<size_t>& conflict_groups,ofstream& file, bool ret)
+void QestoGroups::analyze_cert_pin( size_t qlev, size_t bt_qlev, const vector<size_t>& conflict_groups,
+									ofstream& file, bool ret)
 { 
 	if( file.is_open() && file.tellp() > long(5*1024)*long(1024*1024) ) {
 		file.close();
@@ -997,7 +1088,8 @@ void QestoGroups::analyze_cert_pin(size_t qlev,size_t bt_qlev,const vector<size_
 	set<size_t> conflict_groups2;
 	for( size_t gid : conflict_groups ) {
 		size_t p = gid;
-		while( groups.lits( p ).empty() && groups.parent( p ) != p ) p = groups.parent(p);
+		while( groups.lits( p ).empty() && groups.parent( p ) != p ) 
+			p = groups.parent(p);
 		conflict_groups2.insert( p );
 	}
 	
@@ -1007,9 +1099,8 @@ void QestoGroups::analyze_cert_pin(size_t qlev,size_t bt_qlev,const vector<size_
 		if( level_type(lv) != EXISTENTIAL ) continue;
        	for( size_t gi : groups.groups( lv ) ) { 
 			for( Pin* pP : groups.getPins( gi ) ) {
-				if( eval( mkLit( pinVar(lv,pP->id) ) ,abstractions[ lv ].model ) == l_True ) {
+				if( eval( mkLit( pinVar(lv,pP->id) ) ,abstractions[ lv ].model ) == l_True ) 
 					movePin[lv].insert( pair<Pin*, size_t>( pP, gi ) );
-				}
 			}
 		}
 	}
@@ -1018,39 +1109,46 @@ void QestoGroups::analyze_cert_pin(size_t qlev,size_t bt_qlev,const vector<size_
 	// until every clause deselected by movePin is deselected by only one movePin.
 	// TODO:not only fill( gid ) but also fill( gid2 ) if gid2 is the subset of gid.
 	vector<bool> deselected( groups.get_group_count(), false );
-	for( const size_t gid : conflict_groups2 ) fillChildren( gid, deselected, qlev );
+	for( const size_t gid : conflict_groups2 ) 
+		fillChildren( gid, deselected, qlev );
 	
 	for( size_t lv = ( ret ? bt_qlev + 1 : 0 ); lv < qlev; ++lv ) {
 		vector< set<pair<Pin*, size_t> >::iterator > uselessMovePin;
-		for( set<pair<Pin*, size_t> >::iterator it = movePin[lv].begin(); it != movePin[lv].end(); ++it ) {
+		for( set<pair<Pin*, size_t> >::iterator it = movePin[lv].begin(); 
+			 it != movePin[lv].end(); ++it ) {
 			size_t gid = it->second;
-			while( groups.parent( gid ) != gid && groups.lits( gid ).empty() ) gid = groups.parent( gid );
+			while( groups.parent( gid ) != gid && groups.lits( gid ).empty() ) 
+				gid = groups.parent( gid );
 			assert( groups.parent( gid ) != gid || !groups.lits( gid ).empty() );
-			if( fillChildren( gid, deselected, qlev ) == 0 ) uselessMovePin.push_back( it );
+			if( fillChildren( gid, deselected, qlev ) == 0 ) 
+				uselessMovePin.push_back( it );
 		}
-		for( set<pair<Pin*, size_t> >::iterator it : uselessMovePin ) {
+		for( set<pair<Pin*, size_t> >::iterator it : uselessMovePin ) 
 			movePin[lv].erase( it );
-		}
 	}
 
 
 	if( debug ) {
 		file << "#- " << "Sk ";
 		for( size_t lv = ( ret ? bt_qlev + 1 : 0 ); lv < qlev; ++lv ) { 
-			for( const pair<Pin*, size_t>& pr : movePin[lv] ) file << pr.first->getName() << " * ";
+			for( const pair<Pin*, size_t>& pr : movePin[lv] ) 
+				file << pr.first->getName() << " * ";
 		}
 		file << " @ ";
-		for( size_t gid : conflict_groups2 ) file << 'g' << gid << " * ";
+		for( size_t gid : conflict_groups2 ) 
+			file << 'g' << gid << " * ";
 		file << endl;
 	}
 
 	{
 		ostringstream line1, line2;
 		line1 << ".names ";
-		for( const size_t gid : conflict_groups2 ) line1 << groups.getName( gid ) << ' ';
+		for( const size_t gid : conflict_groups2 ) 
+			line1 << groups.getName( gid ) << ' ';
 		line1 << "s" << situationId;
 		line2 << string( conflict_groups2.size(), '1' ) << " 1";
-		for( const size_t gid : conflict_groups2 ) groups.setWaitingForBlifWritting( gid, true );
+		for( const size_t gid : conflict_groups2 ) 
+			groups.setWaitingForBlifWritting( gid, true );
 		file << line1.str() << endl << line2.str() << endl;
 	}
 
@@ -1062,7 +1160,8 @@ void QestoGroups::analyze_cert_pin(size_t qlev,size_t bt_qlev,const vector<size_
 		//check if a var only appears in one phase. If true, then p != lit <- not parent. Instead,  p = lit.
 		vector<bool> appear( 2*levs.maxv() + 1, false );
 		vector<bool> hasSizeMax( 2*levs.maxv() + 1, false );
-		for( const pair<Pin*, size_t>& pr : movePin[lv] ) appear[ pr.first->lit.x ] = true;
+		for( const pair<Pin*, size_t>& pr : movePin[lv] ) 
+			appear[ pr.first->lit.x ] = true;
 
 		for( const pair<Pin*, size_t>& pr : movePin[lv] ) {
 			Pin* pP =  pr.first;
@@ -1078,7 +1177,8 @@ void QestoGroups::analyze_cert_pin(size_t qlev,size_t bt_qlev,const vector<size_
 			}
 			else {
 				gParent = groups.parent( gi );
-				while( groups.lits( gParent ).empty() && groups.parent( gParent ) != gParent ) gParent = groups.parent(gParent);
+				while( groups.lits( gParent ).empty() && groups.parent( gParent ) != gParent ) 
+					gParent = groups.parent(gParent);
 				if( groups.lits( gParent ).empty() ) {
 					assert( groups.parent( gParent ) == gParent );
 					gParent = SIZE_MAX;
@@ -1088,7 +1188,8 @@ void QestoGroups::analyze_cert_pin(size_t qlev,size_t bt_qlev,const vector<size_
 			// if ther is already ( lit, SIZE_MAX) in moveLitAndParent[lv], then there is no need to insert ( lit, parent )
 			if( hasSizeMax[ pP->lit.x ] && gParent != SIZE_MAX ) continue;
 			assert( !hasSizeMax[ (~(pP->lit)).x ] );
-			if( moveLitAndParent[lv].find( pair<Lit, size_t>( pP->lit, gParent ) ) == moveLitAndParent[lv].end() ) {
+			if( moveLitAndParent[lv].find( pair<Lit, size_t>( pP->lit, gParent ) ) 
+				== moveLitAndParent[lv].end() ) {
 				moveLitAndParent[lv].insert( pair<Lit, size_t>( pP->lit, gParent ) );
 			}
 		}
@@ -1154,8 +1255,10 @@ void QestoGroups::analyze_cert_pin(size_t qlev,size_t bt_qlev,const vector<size_
 				line2 << "00 0";
 				file << line1.str() << endl << line2.str() << endl;
 			}
-			if( sign( pr.first ) ) ++offsetId[ev];
-			else ++onsetId[ev];
+			if( sign( pr.first ) ) 
+				++offsetId[ev];
+			else 
+				++onsetId[ev];
 		}
 		++notDAndSId;
 		if( !isSmallCube ) {
@@ -1170,7 +1273,8 @@ void QestoGroups::analyze_cert_pin(size_t qlev,size_t bt_qlev,const vector<size_
 
 	if( isSmallCube ) {
 		size_t innermostLevelOfConflict = 0;
-		for( size_t gid : conflict_groups2 ) innermostLevelOfConflict = max( innermostLevelOfConflict, groups.qlev( gid ) ); 
+		for( size_t gid : conflict_groups2 ) 
+			innermostLevelOfConflict = max( innermostLevelOfConflict, groups.qlev( gid ) ); 
 		for( size_t lv = innermostLevelOfConflict; lv < levs.lev_count(); ++lv ) {
 			if( level_type( lv ) != EXISTENTIAL ) continue;
 			const string s_def = toStr( lv ) + 'd' + toStr( definedId[lv] ) + ' ';
@@ -1217,8 +1321,10 @@ bool QestoGroups::analyze_exists( size_t qlev, size_t& bt_qlev, vector<size_t>& 
 
 	if(all_opponent) return false;
 	assert( bt_qlev <= ( qlev - 2 ) );
-	if( verb > 2 && ( qlev - 2 ) > bt_qlev ) std::cerr << "long jump" << endl;
-	if( verb > 2 ) std::cerr << "bt_qlev:" << bt_qlev << endl;
+	if( verb > 2 && ( qlev - 2 ) > bt_qlev ) 
+		std::cerr << "long jump" << endl;
+	if( verb > 2 ) 
+		std::cerr << "bt_qlev:" << bt_qlev << endl;
 	for( int i = 0; i < abstraction_conflict.size(); ++i ) {
 		const Lit l = abstraction_conflict[i];
 		if( !sign(l) ) continue;
@@ -1238,30 +1344,33 @@ bool QestoGroups::analyze_univ(size_t qlev, size_t& bt_qlev, vector<size_t>& con
 	bool all_opponent = true;
 
 	if(qlev<2) return false;
-	if(verb>3)std::cerr<<"abstraction_conflict:"<<abstraction_conflict<<std::endl;
+	if(verb>3)
+		std::cerr << "abstraction_conflict:" << abstraction_conflict << std::endl;
   	bt_qlev = ( level_type(0)==UNIVERSAL ? 0 : 1 );
 	vector<int> ex_maxlev (sz, -1 );
 	for(int i=0;i<sz;++i) {//analyze each group in the core
-		const Lit conflict_lit=abstraction_conflict[i];
+		const Lit conflict_lit = abstraction_conflict[i];
 		//assert( !sign(conflict_lit) ); //Hank //FIXME
 		if(sign(conflict_lit)) continue;
     	
 		size_t esat_ql,usat_ql;
-		const auto group=get_pinfo(qlev,var(conflict_lit)).group;
+		const auto group = get_pinfo(qlev,var(conflict_lit)).group;
 		if(find_last_sat_elit(group,esat_ql)) {
 			const auto q=(int)esat_ql;
-			if(q>ex_maxlev[i]) ex_maxlev[i]=q;
+			if(q>ex_maxlev[i]) 
+				ex_maxlev[i]=q;
 		} else {
 			all_opponent=false;
-			if(find_first_udesel(group,usat_ql)) {
-				if(usat_ql>bt_qlev) bt_qlev=usat_ql;
-			}
+			if(find_first_udesel(group,usat_ql)) 
+				if(usat_ql > bt_qlev) 
+					bt_qlev=usat_ql;
 		}
 
 	}
   	if(all_opponent) return false;
 	
-  	if( verb > 2 ) cout<<"bt_qlev:"<<bt_qlev<<std::endl;
+  	if( verb > 2 ) 
+	  	cout << "bt_qlev:" << bt_qlev << std::endl;
   	for(int i=0;i<sz;++i) {
     	const Lit l=abstraction_conflict[i];
     	if(sign(l)) continue;
@@ -1273,9 +1382,12 @@ bool QestoGroups::analyze_univ(size_t qlev, size_t& bt_qlev, vector<size_t>& con
 	return true;
 }
 void QestoGroups::inst_e(){
-  if( debug ) cout << "inst_e start" << endl;
-  FOR_EACH(g,groups.groups(0)) inst_e(*g);
-  if( debug ) cout << "inst_e end" << endl;
+  if( debug ) 
+  	cout << "inst_e start" << endl;
+  FOR_EACH(g,groups.groups(0)) 
+  	inst_e(*g);
+  if( debug ) 
+  	cout << "inst_e end" << endl;
 }
 
 void QestoGroups::inst_e(size_t group) {
@@ -1284,30 +1396,31 @@ void QestoGroups::inst_e(size_t group) {
 	if( groups.is_end(group) ) {
 		clauseInfluencedByInstE.push_back( group ); // TODO
     	vec<Lit> cl;
-    	bool last=true;
+    	bool last = true;
     	for( int qlev=groups.qlev(group)+1; qlev--; group=groups.parent(group) ) {
-      		if(level_type(qlev)!=EXISTENTIAL) {
-				assert( level_type(qlev)==UNIVERSAL );
+      		if(level_type(qlev) != EXISTENTIAL) {
+				assert( level_type(qlev) == UNIVERSAL );
 				continue;
 			}
       		if(!last){
         		cl.push(~mkLit(s(qlev,group)));
-				if( debug ) cout << getSolverName( qlev ) << ".addClause" << cl << endl;
+				if( debug ) 
+					cout << getSolverName( qlev ) << ".addClause" << cl << endl;
         		abstractions[qlev].addClause(cl);
         		cl.pop();
       		} else {
         		last=false; 
 			}
-			const auto& ls=groups.lits(group);
+			const auto& ls = groups.lits(group);
 			FOR_EACH(li,ls) cl.push(*li);
 		}
 	} else {
-    	bool cut=false;
-    	if(group_type(group)==UNIVERSAL) {
-    		const auto& literals=groups.lits(group);
+    	bool cut = false;
+    	if(group_type(group) == UNIVERSAL) {
+    		const auto& literals = groups.lits(group);
       		FOR_EACH(li,literals) {
         		if(!sign(*li)) continue;
-        		cut=true; // has negative universal literal
+        		cut = true; // has negative universal literal
         		break;
       		}
     	} // cut = ( group is universal and there is at least one negative literal. )
@@ -1319,10 +1432,10 @@ void QestoGroups::inst_e(size_t group) {
 }
 
 size_t QestoGroups::find_parent(size_t qlev,size_t group) {
-   assert(groups.qlev(group)>=qlev);
+   assert(groups.qlev(group) >= qlev);
    while(1){
-     const auto gql=groups.qlev(group);
-     if(gql==qlev) return group;
+     const auto gql = groups.qlev(group);
+     if(gql == qlev) return group;
      group=groups.parent(group);
    }
 }
@@ -1331,17 +1444,17 @@ bool QestoGroups::find_first_udesel(size_t group, size_t& ql) {
 	bool rv=false;
 	assert( svalue(group) == false );
 	while( true ) {
-		const auto _ql=groups.qlev(group);
+		const auto _ql = groups.qlev(group);
 		if( level_type( _ql ) == UNIVERSAL && !svalue( group ) ) {
-			ql=_ql;
-			rv=true;
+			ql = _ql;
+			rv = true;
 		}
-		const auto parent=groups.parent(group);
-		if(group==parent) {
+		const auto parent = groups.parent(group);
+		if(group == parent) {
 			assert( groups.qlev(group) == 0 );
 			goto Finish;//return rv;
 		}
-		group=parent;
+		group = parent;
 	}
 	assert(0);
 Finish:
@@ -1350,11 +1463,12 @@ Finish:
 
 bool QestoGroups::find_last_sat_elit(size_t group,size_t& ql) {
 	while( true ) {
-		ql=groups.qlev(group);
+		ql = groups.qlev(group);
 		if(level_type(ql) == EXISTENTIAL) {
 			if( opt.get_pin() ) {
 				for( Pin* pP : groups.getPins(group) ) {
-					if(eval( mkLit(pinVar(ql,pP->id)) ,abstractions[ql].model)==l_True) return true;
+					if(eval( mkLit(pinVar(ql,pP->id)) ,abstractions[ql].model) == l_True) 
+						return true;
 				}
 			} else {
 				FOR_EACH(li,groups.lits(group)) {
@@ -1362,7 +1476,7 @@ bool QestoGroups::find_last_sat_elit(size_t group,size_t& ql) {
 				}	
 			}
 		}
-		const auto parent=groups.parent(group);
+		const auto parent = groups.parent(group);
 		if( group == parent ) return false;
 		group = parent;
 	}
@@ -1372,11 +1486,14 @@ bool QestoGroups::find_last_sat_elit(size_t group,size_t& ql) {
 
 bool QestoGroups::is_disselected_by( size_t group, size_t ql ) {
 	assert( groups.qlev(group) >= ql );
-	while( groups.qlev(group) != ql && groups.qlev(group) > 0 ) group = groups.parent(group);
+	while( groups.qlev(group) != ql && groups.qlev(group) > 0 ) 
+		group = groups.parent(group);
 	assert( groups.qlev(group) == ql );
 
 	if( level_type(ql)==EXISTENTIAL && opt.get_pin() ) { // Hank
-		for( Pin* pP : groups.getPins(group) ) if(eval( mkLit(pinVar(ql,pP->id)) ,abstractions[ql].model)==l_True) return true;
+		for( Pin* pP : groups.getPins(group) ) 
+			if(eval( mkLit(pinVar(ql,pP->id)) ,abstractions[ql].model)==l_True) 
+				return true;
 		return false;
 	} else {
 		FOR_EACH(li,groups.lits(group)) if(eval(*li,abstractions[ql].model)==l_True) return true;
@@ -1397,18 +1514,27 @@ void QestoGroups::allocate_selectors() {
       		FOR_EACH( gi,pgs ) {
 	        	const auto group=*gi;
    	     		Var pv;
-				if( opt.get_strong_pri() && level_type(qlev)==EXISTENTIAL ) pv = abstractions[qlev].newVar( false );
-				else pv =abstractions[qlev].newVar(/*assumption*/);
-        		if (pvars.size()<=group) pvars.resize(group+1,-1);
+				if( opt.get_strong_pri() && level_type(qlev)==EXISTENTIAL ) 
+					pv = abstractions[qlev].newVar( false );
+				else{ 
+					pv =abstractions[qlev].newVar(/*assumption*/);
+					//cout << "pv: " << ", " << pv <<endl;
+				}
+
+        		if (pvars.size()<=group) 
+					pvars.resize(group+1,-1);
 		        pvars[group] = pv;
-        		if(verb>5)std::cerr<<"m: "<<group<<"@"<<qlev<<":"<<pv<<std::endl;
+        		if(verb>5)	
+					std::cerr<<"m: "<<group<<"@"<<qlev<<":"<<pv<<std::endl;
                 // Perry
-                if ((int)pv2gr.size() <= pv) pv2gr.resize(pv+1,-1);
+                if ((int)pv2gr.size() <= pv) 
+					pv2gr.resize(pv+1,-1);
                 pv2gr[pv] = group;
 
         		const size_t inx= pv-orig_maxv-1;
         		auto& ql_infos=infos[qlev];
-        		if (ql_infos.size()<=inx) ql_infos.resize(inx+1);
+        		if (ql_infos.size()<=inx) 
+					ql_infos.resize(inx+1);
         		ql_infos[inx].qlev=qlev-1;
         		ql_infos[inx].group=*gi;
       		}
@@ -1420,24 +1546,33 @@ void QestoGroups::allocate_selectors() {
 
             // [Perry] Level selectors
       		const Var tv=abstractions[qlev].newVar();
-      		if (tvars.size()<=group) tvars.resize(group+1,-1);
+			//cout << "t: " << tv << ", ";
+      		if (tvars.size()<=group) 
+				tvars.resize(group+1,-1);
       		tvars[group]=tv;
     	}
     	FOR_EACH(gi,gs) {
       		const auto group=*gi;
       		const Var sv=abstractions[qlev].newVar(level_type(qlev)==EXISTENTIAL);
-      		if (svars.size()<=group) svars.resize(group+1,-1);
+			//cout << "s: " << sv << ", ";
+      		if (svars.size()<=group) 
+			  	svars.resize(group+1,-1);
       		svars[group]=sv;
-      		if(verb>5)std::cerr<<"m: "<<group<<"@"<<qlev<<":"<<sv<<std::endl;
+      		if(verb>5)
+				std::cerr << "m: " << group << "@" << qlev << ":" << sv << std::endl;
     	}
+		cout << endl;	
   	}
 	if( opt.get_pin() ) { // Hank
 		const vector<Pin*>& pins = groups.getPins();
 		for( Pin* pP : pins ) {
 			Var pv;
-			if( opt.get_pin_pol() ) pv=abstractions[pP->qlev].newVar(false);
-			else pv=abstractions[pP->qlev].newVar();
-			if( pinVars.size() <= pP->id ) pinVars.resize( pP->id + 1, -1 );
+			if( opt.get_pin_pol() ) 
+				pv = abstractions[pP->qlev].newVar(false);
+			else 
+				pv = abstractions[pP->qlev].newVar();
+			if( pinVars.size() <= pP->id ) 
+				pinVars.resize( pP->id + 1, -1 );
 			pinVars[pP->id] = pv;
 		}
 	}

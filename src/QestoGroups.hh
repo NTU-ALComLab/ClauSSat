@@ -15,6 +15,7 @@
 #include <fstream>
 #include <utility>
 #include <map>
+using std::pair;
 
 typedef size_t EncGrp;
 typedef std::map<double, vector<vector<EncGrp>>, std::greater<double> > ProbMap;
@@ -26,7 +27,7 @@ inline size_t get_group(EncGrp enc_g) { return enc_g >> 1; }
 extern Profiler profiler;
 
 class QestoGroups {
- public: 
+public: 
 
 QestoGroups(const Options& opt,
             const LevelInfo& levs,
@@ -35,13 +36,13 @@ QestoGroups(const Options& opt,
 bool solve( const string& skolemName, const string& herbrandName, bool );
 lbool solve(size_t confl_budget, std::ofstream&, std::ofstream& );
 // Perry
-double solve_ssat(bool);
+double solve_ssat(const string&, bool);
 void output_ssat_sol(bool interrupted = false);
 
 
 inline size_t get_btcount() const {return tot_bt_count;}
 
- private: 
+private: 
 
 const Options& opt;
 const size_t verb;
@@ -60,6 +61,7 @@ vector<std::pair<size_t, vector<Lit> > > waitForCert_rules_exists;
 vector<unsigned> onsetId;
 vector<unsigned> offsetId;
 vector<unsigned> definedId;
+vector<unsigned> blockId;
 unsigned sk_situationId;
 unsigned he_situationId;
 
@@ -71,12 +73,12 @@ struct PInfo {
 
 vector<size_t> clauseInfluencedByInstE;
 
-vector<Var> svars;
+vector<Var> svars; //selection vars
 // Hank
 vector<vector<PInfo> > infos;
 vector<Var> pinVars;
 // Perry
-vector<Var> tvars;
+vector<Var> tvars; // local selection vars
 vector<Var> pvars;
 vector<size_t> pv2gr;
 vector<Cache> sel_caches;
@@ -84,7 +86,7 @@ vector<double> ret_prob;
 vector<ProbMap> prob2Learnts;
 
 
- private: 
+private: 
 
 inline Var s(size_t quant_level,size_t group_index) const;
 inline Var t(size_t quant_level,size_t group_index) const;
@@ -141,14 +143,14 @@ int fillChildren( size_t gid, vector<bool>& mark, size_t qlev );
 
 
 // Perry
-double solve_ssat_recur(size_t qlev);
+double solve_ssat_recur(size_t qlev, std::ofstream& skolemFile);
 bool solve_selection(size_t qlev, const vec<Lit>& assump);
 void get_parent_selection(size_t qlev, vec<Lit>& parSel);
 void get_learnt_clause_e(size_t qlev, vector<EncGrp>& enc_groups, bool isZero);
 void get_learnt_clause_r(size_t qlev, vector<EncGrp>& enc_groups, bool isZero);
 void add_learnt_clause_e(size_t qlev, vector<EncGrp>& enc_groups, vec<Lit>& assump, bool always_enable);
 void add_learnt_clause_r(size_t qlev, vector<EncGrp>& enc_groups, vec<Lit>& assump, bool always_enable);
-void partial_assignment_pruning(size_t qlev, vector<EncGrp>& enc_groups, double prob);
+void partial_assignment_pruning(size_t qlev, vector<EncGrp>& enc_groups, double prob, std::ofstream& skolemFile);
 void push_unsat_core(size_t qlev, vector<EncGrp>& enc_groups, vec<Lit>& tmpLits);
 int  sort_clause(size_t qlev, vector<EncGrp>& enc_groups) const;
 void remove_lits(vector<EncGrp>& enc_groups, bool selected);
@@ -156,7 +158,21 @@ bool minimal_selection_e(size_t qlev, size_t param, vec<Lit>& parent_selection);
 void mini_unsat_core(size_t qlev);
 double get_ret_prob(int qlev) const { return qlev < 0? 0 : ret_prob[qlev]; }
 void remove_duplicate_lits(size_t qlev, vec<Lit>& cla);
-void recycle_solver(size_t qlev);
+//void recycle_solver(size_t qlev);
+
+//wwfug, certificate
+void ssat_certification_open(std::ofstream& );
+void ssat_certification_close(std::ofstream& , double);
+void ssat_cert(std::ofstream& skolemFile, vector<EncGrp>& enc_groups, size_t qlev, bool unsat);
+void ssat_cert_sel(std::ofstream& skolemFile, vector<EncGrp>& enc_groups, size_t qlev);
+void ssat_cert_pin(std::ofstream& skolemFile, vector<EncGrp>& enc_groups, size_t qlev);
+// used by clause selection
+void ssat_write_strategy(std::ofstream& skolemFile, vector<Lit>& moveLit, vector<EncGrp>& condition_grp, size_t qlev);
+// used by cube distribution
+void ssat_write_strategy(std::ofstream& skolemFile, vector<pair<Pin*, size_t>>& pin_grp_pair, size_t qlev); 
+void ssat_write_condition(std::ofstream& skolemFile, vector<EncGrp>& condition_grp, size_t qlev, bool close);
+void ssat_extract_move_from_pin(vector<pair<Pin*, size_t>>& pin_grp_pair, size_t qlev);
+
 
 // Model counting
 std::pair<double, double> calculate_prob(size_t qlev, const ProbMap& prob2learnt, bool countZero = false);

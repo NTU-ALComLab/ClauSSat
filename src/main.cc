@@ -34,8 +34,7 @@ int main(int argc, char** argv) {
 	char* nargv[3];
 	char o1[16];
 	if( argc == 2 ) {
-		// strcpy(o1, "-geunw"); //CUED
-		strcpy(o1, "-sguwc"); //ClauSSat
+		strcpy(o1, 	"-geunw"	); //CUED
 		nargv[0]=argv[0];
 		nargv[1]=o1;
 		nargv[2]=argv[1];
@@ -125,7 +124,7 @@ int main(int argc, char** argv) {
         cout << (options.get_pin()? "CUED\t" : "QESTO\t") << (r?"SAT  ":"UNSAT") << "\t" << read_cpu_time() << endl;
     }
     else {
-        gps->solve_ssat(rq.unsatisfy);
+        gps->solve_ssat(skolemName, rq.unsatisfy);
         gps->output_ssat_sol();
         cout << profiler << endl;
     }

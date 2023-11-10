@@ -11,6 +11,7 @@
 #include <iostream>
 #include <map>
 #include <sstream> // Hank
+#include <string>
 
 
 struct Pin {
