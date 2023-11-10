@@ -84,6 +84,7 @@ vector<size_t> pv2gr;
 vector<Cache> sel_caches;
 vector<double> ret_prob;
 vector<ProbMap> prob2Learnts;
+string model_printed;
 
 
 private: 

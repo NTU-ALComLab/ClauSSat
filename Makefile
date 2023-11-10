@@ -130,9 +130,9 @@ main.o: main.cc
 	@echo Generating: $*
 	@flex -o$@ $<
 
-./src/Options.hh ./src/Options.cc: src/option_generation.py
+./src/Options.hh ./src/Options.cc: ./src/option_generation.py
 	@echo Generating: $@
-	python2 option_generation.py  >./src/Options.hh 2>./src/Options.cc
+	python2 ./src/option_generation.py  >./src/Options.hh 2>./src/Options.cc
 
 clean:
 	@rm -f $(DEPENDS)

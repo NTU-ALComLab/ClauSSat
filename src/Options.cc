@@ -11,7 +11,7 @@ bool Options::parse(int argc,char **argv) {
   bool return_value = true;
   while (1) {
     int option_index = 0;
-    c = getopt_long(argc, argv, "vhegyupnwkmsctd", long_options, &option_index);
+    c = getopt_long(argc, argv, "vhegyupnwkmsctdx", long_options, &option_index);
     if (c == -1) break;
     switch (c) {
     case 'v':
@@ -58,6 +58,9 @@ bool Options::parse(int argc,char **argv) {
       break;
     case 'd':
       ++dynamic;
+      break;
+    case 'x':
+      ++extra_verb;
       break;
     case '?':
       // if (isprint(optopt)) fprintf (stderr, "Unknown option -%c.\n", optopt);
@@ -114,6 +117,9 @@ ostream& Options::print(ostream& out) const {
   out<< " -d ";
   out<< "    "<<" enable dynamic dropping ";
   out<< endl;
+  out<< " -x ";
+  out<< "    "<<" enable extra verbose information at existential QLev 0 ";
+  out<< endl;
   return out;
 }
 ostream& operator << (ostream& out, const Options& opt) {
@@ -133,5 +139,6 @@ ostream& operator << (ostream& out, const Options& opt) {
   if(opt.get_cache()) out << "-c ";
   if(opt.get_partial()) out << "-t ";
   if(opt.get_dynamic()) out << "-d ";
+  if(opt.get_extra_verb()) out << "-x ";
   return out;
 }

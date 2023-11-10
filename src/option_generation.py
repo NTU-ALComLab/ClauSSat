@@ -142,6 +142,7 @@ def main():
   options.add_short_non_arg_option('cache','-c','enable caching results')
   options.add_short_non_arg_option('partial','-t','enable partial assignment pruning')
   options.add_short_non_arg_option('dynamic','-d','enable dynamic dropping')
+  options.add_short_non_arg_option('extra_verb','-x','enable extra verbose information at existential QLev 0')
 
 
 

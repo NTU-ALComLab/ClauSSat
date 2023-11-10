@@ -38,7 +38,7 @@ double QestoGroups::solve_ssat(const string& skolemName, bool alreadyUnsat)
         ssat_certification_open(skolemFile);
     }
     double max_prob = solve_ssat_recur(0, skolemFile);
-    ssat_certification_close(skolemFile, max_prob);
+    if(opt.get_cert()) ssat_certification_close(skolemFile, max_prob);
     return max_prob;
 }
 
@@ -128,8 +128,10 @@ double QestoGroups::solve_ssat_recur(size_t qlev, ofstream& skolemFile)
                     cout << getSolverName(qlev) << " update max prob = " << ret << '\n';
                     print_encgrps(enc_max_lev_selection); cout << '\n';
                     #endif
-                    if (qlev == 0) 
+                    if (qlev == 0){
                         cout << "Update solution, value = " << ret << "\t(time = " << profiler.get_tot_time() << ")\n";
+                        cout << model_printed;
+                    }
                 }
                 if (prob == 1) { // early termination
                     minimal_selection_e(qlev, 1, parent_selection);
@@ -247,6 +249,35 @@ bool QestoGroups::solve_selection(size_t qlev, const vec<Lit>& assump)
             }
         }
         #endif
+
+        if (opt.get_extra_verb() && opt.get_ssat()){
+            if(qlev==0 && levs.level_type(qlev)==EXISTENTIAL){
+                if(opt.get_pin()){
+                    //TODO
+                    // dumped original variable based on pin (cube distributor literals)
+                    // for( size_t gi : groups.groups(qlev) ){
+                    //     size_t par = groups.parent(gi);
+                    //     while(groups.lits(par).empty() && groups.parent(par)!=par )
+                    //         par = groups.parent(par);
+                    //     for( Pin* pP : groups.getPins(gi)  ){
+                    //         cout << toInt(pP->lit) << endl;
+                    //         // if( abstractions[qlev].modelValue( pinVar(qlev, pP->id) )==l_False ) continue;
+                    //     }
+                    // }
+                }
+                else{
+                    model_printed = "";
+                    model_printed+= "Model : ";
+                    for( const Var& v : levs.level_vars( qlev ) ) {
+                        bool sign = ( abstractions[ qlev ].modelValue(v) == l_False );
+                        model_printed += std::to_string(v);
+                        model_printed += sign ? "'" : "";
+                        model_printed += " "; 
+                    }
+                    model_printed += "\n";
+                }
+            }
+        }
     }
     return sat;
 }

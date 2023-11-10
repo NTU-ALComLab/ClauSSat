@@ -23,6 +23,7 @@ bool parse(int argc,char **argv);
   , cache ( 0 )
   , partial ( 0 )
   , dynamic ( 0 )
+  , extra_verb ( 0 )
   {}
   const std::vector<string>&    get_rest() const { return rest; }
   std::ostream&                 print(std::ostream& out) const;
@@ -41,6 +42,7 @@ bool parse(int argc,char **argv);
   int                         get_cache() const { return cache ;}
   int                         get_partial() const { return partial ;}
   int                         get_dynamic() const { return dynamic ;}
+  int                         get_extra_verb() const { return extra_verb ;}
   friend std::ostream& operator << (std::ostream& out, const Options& opt);
 private:
   std::vector<string> rest;
@@ -59,5 +61,6 @@ private:
   int cache ;
   int partial ;
   int dynamic ;
+  int extra_verb ;
 };
 #endif
